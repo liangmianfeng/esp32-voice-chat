@@ -1,0 +1,19 @@
+{
+  "name": "esp32-voice-chat-server",
+  "version": "1.0.0",
+  "description": "Node.js server for ESP32 real-time voice chat relay (WebSocket)",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "author": "ChatGPT Example",
+  "license": "MIT"
+}
