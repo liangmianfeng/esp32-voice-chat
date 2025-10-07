@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>ESP32 Voice Chat</title>
+  <style>
+    body {
+      font-family: "Segoe UI", "Microsoft YaHei";
+      text-align: center;
+      background: #f5f6fa;
+      color: #333;
+      margin: 0;
+      padding: 40px;
+    }
+    h1 {
+      color: #0078D7;
+    }
+    button {
+      font-size: 18px;
+      padding: 12px 24px;
+      margin: 20px;
+      border: none;
+      border-radius: 8px;
+      background-color: #0078D7;
+      color: white;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    button:hover {
+      background-color: #005fa3;
+    }
+    .status {
+      margin-top: 20px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎙 ESP32 Voice Chat</h1>
+  <button id="startBtn">开始通话</button>
+  <button id="stopBtn" disabled>停止通话</button>
+  <div class="status" id="status">等待连接服务器...</div>
+
+  <script>
+    const WS_URL = "wss://esp32-voice-chat.onrender.com";
+    let ws, audioCtx, micStream, processor, source, speakerBuffer = [];
+
+    async function startChat() {
+      document.getElementById('status').innerText = "🎧 连接服务器中...";
+      ws = new WebSocket(WS_URL);
+      ws.binaryType = "arraybuffer";
+
+      ws.onopen = () => {
+        document.getElementById('status').innerText = "✅ 已连接，正在传输语音...";
+        document.getElementById('startBtn').disabled = true;
+        document.getElementById('stopBtn').disabled = false;
+        startAudioStream();
+      };
+
+      ws.onclose = () => {
+        document.getElementById('status').innerText = "❌ 已断开连接";
+        stopChat();
+      };
+
+      ws.onmessage = (event) => {
+        if (typeof event.data === 'string') return;
+        playAudio(event.data);
+      };
+    }
+
+    async function startAudioStream() {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      source = audioCtx.createMediaStreamSource(micStream);
+      processor = audioCtx.createScriptProcessor(512, 1, 1);
+
+      source.connect(processor);
+      processor.connect(audioCtx.destination);
+
+      const encoder = new TextEncoder();
+
+      processor.onaudioprocess = (e) => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        const input = e.inputBuffer.getChannelData(0);
+        const buffer = new Int16Array(input.length);
+        for (let i = 0; i < input.length; i++) {
+          buffer[i] = input[i] * 32767;
+        }
+        ws.send(buffer);
+      };
+    }
+
+    function playAudio(data) {
+      const int16Array = new Int16Array(data);
+      const float32Array = new Float32Array(int16Array.length);
+      for (let i = 0; i < int16Array.length; i++) {
+        float32Array[i] = int16Array[i] / 32768;
+      }
+
+      const audioBuffer = audioCtx.createBuffer(1, float32Array.length, 16000);
+      audioBuffer.copyToChannel(float32Array, 0);
+
+      const sourceNode = audioCtx.createBufferSource();
+      sourceNode.buffer = audioBuffer;
+      sourceNode.connect(audioCtx.destination);
+      sourceNode.start();
+    }
+
+    function stopChat() {
+      if (processor) processor.disconnect();
+      if (source) source.disconnect();
+      if (micStream) micStream.getTracks().forEach(track => track.stop());
+      if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('stopBtn').disabled = true;
+      document.getElementById('status').innerText = "🔇 已停止通话";
+    }
+
+    document.getElementById('startBtn').onclick = startChat;
+    document.getElementById('stopBtn').onclick = stopChat;
+  </script>
+</body>
+</html>
