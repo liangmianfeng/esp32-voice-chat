@@ -1,50 +1,68 @@
-/**
- * ESP32 双向语音 WebSocket 中转服务器
- * ----------------------------------------
- * 功能：
- *   - 接收每个 ESP32 客户端的音频数据流
- *   - 实现点对点转发（A<->B）
- *   - 可用于 Render 免费部署
- */
+// =====================================================
+// ESP32 Voice Chat Cloud Relay Server (for Render.com)
+// Author: ChatGPT (2025)
+// =====================================================
 
 import express from "express";
 import http from "http";
 import { WebSocketServer } from "ws";
+import cors from "cors";
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 const app = express();
+app.use(cors());
+app.use(express.json());
+
+// ---------------------------------------------
+// 创建 HTTP + WebSocket 服务器
+// ---------------------------------------------
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-// 存储已连接客户端
-const clients = new Map();
+let clients = new Set();
 
+// ---------------------------------------------
+// 处理 WebSocket 连接
+// ---------------------------------------------
 wss.on("connection", (ws, req) => {
-  const id = Math.random().toString(36).substring(2, 8);
-  clients.set(id, ws);
-  console.log(`✅ 客户端 ${id} 已连接，当前在线 ${clients.size}`);
+  const ip = req.socket.remoteAddress;
+  console.log(`✅ 新客户端连接: ${ip}`);
+  clients.add(ws);
 
-  ws.on("message", (msg) => {
-    // 默认将消息转发给其它客户端（简单广播）
-    for (const [cid, client] of clients) {
-      if (cid !== id && client.readyState === ws.OPEN) {
-        client.send(msg);
+  ws.on("message", (data, isBinary) => {
+    // 将接收到的音频帧广播给其他客户端
+    for (const client of clients) {
+      if (client !== ws && client.readyState === 1) {
+        client.send(data, { binary: isBinary });
       }
     }
   });
 
   ws.on("close", () => {
-    clients.delete(id);
-    console.log(`❌ 客户端 ${id} 已断开连接`);
+    console.log(`❌ 客户端断开: ${ip}`);
+    clients.delete(ws);
+  });
+
+  ws.on("error", (err) => {
+    console.error("⚠️ WebSocket 错误:", err.message);
+    clients.delete(ws);
   });
 });
 
-// 首页简单说明
-app.get("/", (_, res) => {
-  res.send(`<h3>ESP32 双向语音中转服务器已启动 ✅</h3>
-            <p>WebSocket 地址：<code>wss://${req?.headers?.host || "your-server"}</code></p>`);
+// ---------------------------------------------
+// HTTP 路由（可选：健康检查）
+// ---------------------------------------------
+app.get("/", (req, res) => {
+  res.send(`
+    <h2>🌍 ESP32 Voice Chat Relay Server</h2>
+    <p>Status: Running ✅</p>
+    <p>WebSocket: wss://${req.headers.host}</p>
+  `);
 });
 
+// ---------------------------------------------
+// 启动服务
+// ---------------------------------------------
 server.listen(PORT, () => {
-  console.log(`🌍 Server running on http://localhost:${PORT}`);
+  console.log(`🌍 语音中转服务器已启动: http://localhost:${PORT}`);
 });
