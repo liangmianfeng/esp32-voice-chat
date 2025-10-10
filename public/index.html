@@ -4,30 +4,10 @@
   <meta charset="UTF-8" />
   <title>ESP32 语音对讲</title>
   <style>
-    body {
-      font-family: "Segoe UI", sans-serif;
-      background: #0f172a;
-      color: #f8fafc;
-      text-align: center;
-      padding: 40px;
-    }
-    button {
-      font-size: 18px;
-      padding: 12px 24px;
-      margin: 10px;
-      border-radius: 12px;
-      border: none;
-      cursor: pointer;
-      background: #2563eb;
-      color: white;
-      transition: 0.3s;
-    }
-    button:hover {
-      background: #1d4ed8;
-    }
-    h1 {
-      color: #38bdf8;
-    }
+    body { font-family: "Segoe UI", sans-serif; background: #0f172a; color: #f8fafc; text-align: center; padding: 40px; }
+    button { font-size: 18px; padding: 12px 24px; margin: 10px; border-radius: 12px; border: none; cursor: pointer; background: #2563eb; color: white; transition: 0.3s; }
+    button:hover { background: #1d4ed8; }
+    h1 { color: #38bdf8; }
   </style>
 </head>
 <body>
@@ -39,30 +19,36 @@
   <script>
     const wsUrl = (location.protocol === "https:" ? "wss://" : "ws://") + location.host;
     const ws = new WebSocket(wsUrl);
-
-    let mediaStream;
-    let mediaRecorder;
-    let audioPlayer = new Audio();
-    audioPlayer.autoplay = true;
-
     ws.binaryType = "arraybuffer";
+
+    let mediaStream, audioCtx, processor, source;
+    const audioQueue = [];
+    const playerCtx = new (window.AudioContext || window.webkitAudioContext)();
 
     ws.onopen = () => console.log("✅ WebSocket 已连接: " + wsUrl);
     ws.onmessage = (e) => {
       if (e.data instanceof ArrayBuffer) {
-        const blob = new Blob([e.data], { type: "audio/wav" });
-        const url = URL.createObjectURL(blob);
-        audioPlayer.src = url;
+        const buffer = new Int16Array(e.data);
+        const float32 = new Float32Array(buffer.length);
+        for (let i = 0; i < buffer.length; i++) float32[i] = buffer[i] / 0x7fff;
+
+        const audioBuffer = playerCtx.createBuffer(1, float32.length, 16000);
+        audioBuffer.getChannelData(0).set(float32);
+
+        const sourceNode = playerCtx.createBufferSource();
+        sourceNode.buffer = audioBuffer;
+        sourceNode.connect(playerCtx.destination);
+        sourceNode.start();
       } else {
-        console.log("📩", e.data);
+        console.log("📩 Text:", e.data);
       }
     };
 
     document.getElementById("btnStart").onclick = async () => {
       mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const audioCtx = new AudioContext({ sampleRate: 16000 });
-      const source = audioCtx.createMediaStreamSource(mediaStream);
-      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+      audioCtx = new AudioContext({ sampleRate: 16000 });
+      source = audioCtx.createMediaStreamSource(mediaStream);
+      processor = audioCtx.createScriptProcessor(1024, 1, 1);
 
       source.connect(processor);
       processor.connect(audioCtx.destination);
@@ -70,15 +56,18 @@
       processor.onaudioprocess = (e) => {
         const input = e.inputBuffer.getChannelData(0);
         const buffer = new Int16Array(input.length);
-        for (let i = 0; i < input.length; i++) {
-          buffer[i] = Math.max(-1, Math.min(1, input[i])) * 0x7fff;
-        }
-        if (ws.readyState === WebSocket.OPEN) ws.send(buffer);
+        for (let i = 0; i < input.length; i++) buffer[i] = Math.max(-1, Math.min(1, input[i])) * 0x7fff;
+
+        // 分块发送
+        if (ws.readyState === WebSocket.OPEN) ws.send(buffer.buffer);
       };
+
       alert("🎤 正在录音并传输...");
     };
 
     document.getElementById("btnStop").onclick = () => {
+      if (processor) processor.disconnect();
+      if (source) source.disconnect();
       if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
       alert("🛑 对讲已停止");
     };
