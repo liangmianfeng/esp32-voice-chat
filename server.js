@@ -1,13 +1,4 @@
 // server.js
-/**
- * ESP32 Voice Chat Relay Server (Render Friendly)
- * -----------------------------------------
- * ✅ 不需要本地证书
- * ✅ 支持 ESP32 + 浏览器双向语音
- * ✅ 多客户端支持
- * ✅ 自动重连与错误处理
- */
-
 import express from "express";
 import http from "http";
 import { WebSocketServer } from "ws";
@@ -19,13 +10,13 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// === 静态网页托管 ===
+// 静态网页托管
 app.use(express.static(path.join(__dirname, "public")));
 
-// === HTTP Server (Render 会自动 TLS) ===
+// HTTP Server
 const server = http.createServer(app);
 
-// === WebSocket 服务 ===
+// WebSocket 服务
 const wss = new WebSocketServer({ server });
 
 let clients = [];
@@ -36,7 +27,7 @@ wss.on("connection", (ws, req) => {
   clients.push(ws);
 
   ws.on("message", (data) => {
-    // 二进制音频数据转发给其他客户端
+    // 二进制音频数据转发
     if (data instanceof Buffer || data instanceof ArrayBuffer) {
       for (const client of clients) {
         if (client !== ws && client.readyState === client.OPEN) {
@@ -63,10 +54,10 @@ wss.on("connection", (ws, req) => {
   });
 });
 
-// Render 会自动分配端口，使用环境变量
+// Render 会自动分配端口
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`🌍 ESP32 Voice Chat Relay Server`);
   console.log(`状态：运行 ✅`);
-  console.log(`WebSocket: ws(s)://${process.env.RENDER_EXTERNAL_HOSTNAME || "localhost"}:${PORT}`);
+  console.log(`WebSocket: wss://esp32-voice-chat.onrender.com/`);
 });
