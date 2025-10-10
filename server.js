@@ -1,16 +1,15 @@
 // server.js
 /**
- * ESP32 Voice Chat Relay Server
+ * ESP32 Voice Chat Relay Server (Render Friendly)
  * -----------------------------------------
- * ✅ HTTPS + WSS 双向语音转发
- * ✅ 静态网页托管 (public)
+ * ✅ 不需要本地证书
+ * ✅ 支持 ESP32 + 浏览器双向语音
  * ✅ 多客户端支持
- * ✅ WebSocket 错误处理
+ * ✅ 自动重连与错误处理
  */
 
-import fs from "fs";
-import https from "https";
 import express from "express";
+import http from "http";
 import { WebSocketServer } from "ws";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -23,17 +22,12 @@ const app = express();
 // === 静态网页托管 ===
 app.use(express.static(path.join(__dirname, "public")));
 
-// === HTTPS Server 配置 ===
-const server = https.createServer(
-  {
-    key: fs.readFileSync(path.join(__dirname, "cert/key.pem")),   // 私钥
-    cert: fs.readFileSync(path.join(__dirname, "cert/cert.pem")), // 证书
-  },
-  app
-);
+// === HTTP Server (Render 会自动 TLS) ===
+const server = http.createServer(app);
 
-// === WebSocket Server ===
+// === WebSocket 服务 ===
 const wss = new WebSocketServer({ server });
+
 let clients = [];
 
 wss.on("connection", (ws, req) => {
@@ -42,7 +36,7 @@ wss.on("connection", (ws, req) => {
   clients.push(ws);
 
   ws.on("message", (data) => {
-    // 转发二进制音频数据给其他客户端
+    // 二进制音频数据转发给其他客户端
     if (data instanceof Buffer || data instanceof ArrayBuffer) {
       for (const client of clients) {
         if (client !== ws && client.readyState === client.OPEN) {
@@ -54,7 +48,7 @@ wss.on("connection", (ws, req) => {
         }
       }
     } else {
-      console.log(`📩 Text: ${data.toString()}`);
+      console.log("📩 Text:", data.toString());
     }
   });
 
@@ -64,14 +58,15 @@ wss.on("connection", (ws, req) => {
   });
 
   ws.on("error", (err) => {
-    console.log(`⚠️ WS Error (${ip}): ${err}`);
+    console.log(`⚠️ WS 错误 (${ip}): ${err}`);
     clients = clients.filter((c) => c !== ws);
   });
 });
 
-const PORT = process.env.PORT || 3001;
+// Render 会自动分配端口，使用环境变量
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`🌍 ESP32 Voice Chat Relay Server`);
-  console.log(`Status: Running ✅`);
-  console.log(`WebSocket: wss://<your-domain-or-ip>:${PORT}`);
+  console.log(`状态：运行 ✅`);
+  console.log(`WebSocket: ws(s)://${process.env.RENDER_EXTERNAL_HOSTNAME || "localhost"}:${PORT}`);
 });
